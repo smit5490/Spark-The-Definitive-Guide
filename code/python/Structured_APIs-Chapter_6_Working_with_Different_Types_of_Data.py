@@ -1,130 +1,129 @@
+from pyspark.sql import SparkSession
+import os
+
+#Set-up spark instance
+spark = SparkSession.builder.appName("chapter-6").getOrCreate()
+
+# Import and inspect data
 df = spark.read.format("csv")\
   .option("header", "true")\
   .option("inferSchema", "true")\
-  .load("/data/retail-data/by-day/2010-12-01.csv")
+  .load(os.getcwd()+"/data/retail-data/by-day/2010-12-01.csv")
+
 df.printSchema()
 df.createOrReplaceTempView("dfTable")
 
 
-# COMMAND ----------
-
+# Convert a couple of different kinds of python values to their respective spark types
 from pyspark.sql.functions import lit
 df.select(lit(5), lit("five"), lit(5.0))
 
 
-# COMMAND ----------
-
+# Working with Booleans
 from pyspark.sql.functions import col
 df.where(col("InvoiceNo") != 536365)\
   .select("InvoiceNo", "Description")\
   .show(5, False)
 
+# Can also write as an expression
+df.where("InvoiceNo != 536365")\
+    .select("InvoiceNo", "Description")\
+    .show(5,False)
 
-# COMMAND ----------
 
+# Should apply filters sequentially
 from pyspark.sql.functions import instr
 priceFilter = col("UnitPrice") > 600
-descripFilter = instr(df.Description, "POSTAGE") >= 1
+descripFilter = instr(df.Description, "POSTAGE") >= 1 # Finds substring in description and returns index (start at 1)
 df.where(df.StockCode.isin("DOT")).where(priceFilter | descripFilter).show()
 
 
-# COMMAND ----------
-
+# Define boolean flags
 from pyspark.sql.functions import instr
 DOTCodeFilter = col("StockCode") == "DOT"
 priceFilter = col("UnitPrice") > 600
 descripFilter = instr(col("Description"), "POSTAGE") >= 1
+# Apply boolean flags to create a boolean column, filter on that column, and return columns
 df.withColumn("isExpensive", DOTCodeFilter & (priceFilter | descripFilter))\
   .where("isExpensive")\
   .select("unitPrice", "isExpensive").show(5)
 
 
-# COMMAND ----------
-
+# Sometimes it's easier just to write a SQL expression
 from pyspark.sql.functions import expr
 df.withColumn("isExpensive", expr("NOT UnitPrice <= 250"))\
   .where("isExpensive")\
   .select("Description", "UnitPrice").show(5)
 
+# Nulls in your data need to be treated differently
+# Following line checks to see if Description is equal to "hello" and will return False for null values
+df.where(col("Description").eqNullSafe("hello")).show()
 
-# COMMAND ----------
 
+# Working with numbers
 from pyspark.sql.functions import expr, pow
 fabricatedQuantity = pow(col("Quantity") * col("UnitPrice"), 2) + 5
 df.select(expr("CustomerId"), fabricatedQuantity.alias("realQuantity")).show(2)
 
 
-# COMMAND ----------
-
+# Can also write this as a SQL expression:
 df.selectExpr(
   "CustomerId",
   "(POWER((Quantity * UnitPrice), 2.0) + 5) as realQuantity").show(2)
 
 
-# COMMAND ----------
-
+# Rounding
+# round - rounds up if equally between two numbers
+# bround - Round down if equally between two numbers
 from pyspark.sql.functions import lit, round, bround
-
 df.select(round(lit("2.5")), bround(lit("2.5"))).show(2)
 
 
-# COMMAND ----------
-
+# Pearson's Correlation two different ways
 from pyspark.sql.functions import corr
-df.stat.corr("Quantity", "UnitPrice")
-df.select(corr("Quantity", "UnitPrice")).show()
+df.stat.corr("Quantity", "UnitPrice") # statistic method
+df.select(corr("Quantity", "UnitPrice")).show() # function
 
 
-# COMMAND ----------
-
+# Compute summary statistics
 df.describe().show()
 
 
-# COMMAND ----------
-
+# If you need exact numbers, calculate with imported functions:
 from pyspark.sql.functions import count, mean, stddev_pop, min, max
 
 
-# COMMAND ----------
-
+# Statistical functions in the StatFunctions Package can be accessed by using .stat:
 colName = "UnitPrice"
 quantileProbs = [0.5]
 relError = 0.05
 df.stat.approxQuantile("UnitPrice", quantileProbs, relError) # 2.51
-
-
-# COMMAND ----------
-
-df.stat.crosstab("StockCode", "Quantity").show()
-
-
-# COMMAND ----------
-
+df.stat.crosstab("StockCode", "Quantity").show() #(rows x columns)
 df.stat.freqItems(["StockCode", "Quantity"]).show()
 
 
-# COMMAND ----------
-
+# Add unique value for each row, starting with 0:
 from pyspark.sql.functions import monotonically_increasing_id
 df.select(monotonically_increasing_id()).show(2)
 
 
-# COMMAND ----------
-
+# Working with strings
+# Capitalize each word
 from pyspark.sql.functions import initcap
 df.select(initcap(col("Description"))).show()
+df.selectExpr("initcap(Description)")
 
 
-# COMMAND ----------
-
+# upper and lower case:
 from pyspark.sql.functions import lower, upper
 df.select(col("Description"),
     lower(col("Description")),
     upper(lower(col("Description")))).show(2)
 
 
-# COMMAND ----------
-
+# add/remove padding
+# note padding only considers entire string length - not just padding on side of existing string
+# Thus it will remove characters if len(string) < padding length
 from pyspark.sql.functions import lit, ltrim, rtrim, rpad, lpad, trim
 df.select(
     ltrim(lit("    HELLO    ")).alias("ltrim"),
@@ -134,8 +133,9 @@ df.select(
     rpad(lit("HELLO"), 10, " ").alias("rp")).show(2)
 
 
-# COMMAND ----------
-
+# Regular Expressions
+# Two key functions: regexp_replace and regex_extract
+# Replace substring based on regex match
 from pyspark.sql.functions import regexp_replace
 regex_string = "BLACK|WHITE|RED|GREEN|BLUE"
 df.select(
@@ -143,15 +143,13 @@ df.select(
   col("Description")).show(2)
 
 
-# COMMAND ----------
-
+# Replace given characters with other characters
 from pyspark.sql.functions import translate
 df.select(translate(col("Description"), "LEET", "1337"),col("Description"))\
   .show(2)
 
 
-# COMMAND ----------
-
+# Extract the first color match
 from pyspark.sql.functions import regexp_extract
 extract_str = "(BLACK|WHITE|RED|GREEN|BLUE)"
 df.select(
@@ -159,8 +157,8 @@ df.select(
      col("Description")).show(2)
 
 
-# COMMAND ----------
-
+# Check to see if column contains a color - note instr matches first instance of text and returns position
+# (starting at 1). we want to find a match any where in the string so >1
 from pyspark.sql.functions import instr
 containsBlack = instr(col("Description"), "BLACK") >= 1
 containsWhite = instr(col("Description"), "WHITE") >= 1
@@ -169,42 +167,44 @@ df.withColumn("hasSimpleColor", containsBlack | containsWhite)\
   .select("Description").show(3, False)
 
 
-# COMMAND ----------
-
-from pyspark.sql.functions import expr, locate
+# Can use var args to dynamically pass different values into function to select colors.
+from pyspark.sql.functions import expr, locate # locate returns integer location
 simpleColors = ["black", "white", "red", "green", "blue"]
+
 def color_locator(column, color_string):
   return locate(color_string.upper(), column)\
           .cast("boolean")\
           .alias("is_" + color_string)
+
 selectedColumns = [color_locator(df.Description, c) for c in simpleColors]
-selectedColumns.append(expr("*")) # has to a be Column type
 
-df.select(*selectedColumns).where(expr("is_white OR is_red"))\
-  .select("Description").show(3, False)
+selectedColumns.append(expr("*")) # has to a be Column type - appending list of columns together
+
+df.select(*selectedColumns).where(expr("is_white OR is_red")).show(3, False)
 
 
-# COMMAND ----------
-
+# Timestamps - Note: Spark's TimestampType supports only second-level precision. Use Long for more precision.
 from pyspark.sql.functions import current_date, current_timestamp
 dateDF = spark.range(10)\
   .withColumn("today", current_date())\
   .withColumn("now", current_timestamp())
-dateDF.createOrReplaceTempView("dateTable")
+dateDF.createOrReplaceTempView("dateTable")ß
+dateDF.show()
+dateDF.printSchema()
 
 
-# COMMAND ----------
-
+# Add/subtract 5 days
 from pyspark.sql.functions import date_add, date_sub
 dateDF.select(date_sub(col("today"), 5), date_add(col("today"), 5)).show(1)
 
 
-# COMMAND ----------
-
+# Day differences:
+# Note: to_date converts string to date and uses Java SimpleDateFormat
 from pyspark.sql.functions import datediff, months_between, to_date
 dateDF.withColumn("week_ago", date_sub(col("today"), 7))\
   .select(datediff(col("week_ago"), col("today"))).show(1)
 
+# Month differences:
 dateDF.select(
     to_date(lit("2016-01-01")).alias("start"),
     to_date(lit("2017-05-22")).alias("end"))\
@@ -212,7 +212,6 @@ dateDF.select(
 
 
 # COMMAND ----------
-
 from pyspark.sql.functions import to_date, lit
 spark.range(5).withColumn("date", lit("2017-01-01"))\
   .select(to_date(col("date"))).show(1)

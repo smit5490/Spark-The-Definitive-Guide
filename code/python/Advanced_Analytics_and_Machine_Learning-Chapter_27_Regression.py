@@ -81,7 +81,7 @@ out = model.transform(df)\
 metrics = RegressionMetrics(out)
 print "MSE: " + str(metrics.meanSquaredError)
 print "RMSE: " + str(metrics.rootMeanSquaredError)
-print "R-squared: " + str(metrics.r2)
+print "r-squared: " + str(metrics.r2)
 print "MAE: " + str(metrics.meanAbsoluteError)
 print "Explained variance: " + str(metrics.explainedVariance)
 
